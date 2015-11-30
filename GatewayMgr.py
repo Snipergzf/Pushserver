@@ -104,6 +104,7 @@ class GatewayMgr(object):
         self.greenlets = [
             gevent.spawn(self._send),
             gevent.spawn(self._recv),
+            gevent.spawn(sefl.heartbeat),
         ]
         self.auth()
 
@@ -125,6 +126,10 @@ class GatewayMgr(object):
             bundle.callback,
             '%07d-%s' % (bundle.msg.msgid, bundle.user.guid)
         )
+    def heartbeat(self):
+        while True:
+            gevent.sleep(HEARTBEAT_INTERV)
+            self._queued_send('', MSG_CLIENT | MSG_HEARTBEAT, '{"token":"foo"}')
 
     def _queued_send(self, rid, msgtype, body, callback = None, mid = None):
         mid = 'PSH' + (mid or binascii.hexlify(os.urandom(9)))
@@ -173,15 +178,17 @@ class GatewayMgr(object):
             
 
     def _resp_handler(self, msg):
-        #self.logger.debug("MID=%s" % msg.MID)
+        self.logger.debug("MID=%s" % msg.MID)
         if msg.BODY:
             msg_body = json.loads(msg.BODY)
         else:
             msg_body = {}
+            #self.logger.debug(msg_body)
         #print(msg)
         if msg.TYPE & MSG_CLIENT:
             if msg_body['type'] == 'receipt':
                 mid = msg_body['mid']
+                #mid = msg.MID
                 self.logger.debug('%s confirmed %s' % (msg.SID, mid))
                 if mid in self.callback_tbl:
                     _func = self.callback_tbl.pop(mid)

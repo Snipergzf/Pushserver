@@ -129,7 +129,6 @@ class DataMgr(Greenlet):
             :type guid: int
         """
         #TODO get userid from rid
-		#guid = sid即上线用户的uid
         uid = "u" + guid
         u = UserObj(uid, guid)
         self.users_add(u)
@@ -189,7 +188,7 @@ class DataMgr(Greenlet):
             :param send_func: the function to call on generated bundles
             :type send_func: lambda, function, instancemethod
             :param user_keys: user guid list to do the match func
-            :type user_keys: list
+            :type send_func: list
 
         """
         user_keys = user_keys or self._users.keys()
@@ -220,6 +219,7 @@ class DataMgr(Greenlet):
                     payload_callback = lambda:self.mongo_instance.event_get_single_info(i),
                     msgid = i
                 )
+
                 self.msg_add(m)
             gevent.sleep(60)
             self._save_cache()
