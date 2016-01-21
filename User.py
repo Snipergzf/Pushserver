@@ -20,9 +20,7 @@
 import uuid
 import time
 from Message import BundledMessage
-
 import alg
-
 
 class UserObj(object):
 
@@ -40,11 +38,13 @@ class UserObj(object):
             else return None
         '''
         if msg.msgid in self.leaked_msg:#previously leaked
+            print('User: previously leaked')
             b = BundledMessage(msg, self, self._send_callback)
             _ = self.leaked_msg[msg.msgid] + 1
             b.try_count = _
             return b
         if msg.birth > self.heard_before and self.match_func(msg):# not sent before, and, match interest
+            print('User: not sent before, and, match interest')
             b = BundledMessage(msg, self, self._send_callback)
             return b
         return None
@@ -61,6 +61,9 @@ class UserObj(object):
             else:
                 self.leaked_msg[msg.msgid] += 1
         if msg.birth > self.heard_before:#raise last sent time to newest
+            # print('msg.id '+str(msg.msgid))
+            # print('msg.birth'+str(msg.birth))
+            # print('raise last sent time to newest'+str(int(time.time())))
             self.heard_before = msg.birth
 
     @property

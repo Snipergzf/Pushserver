@@ -20,6 +20,7 @@
 import os
 import binascii
 import time
+import random
 import gevent
 import gevent.ssl
 from gevent import Greenlet
@@ -35,8 +36,11 @@ except ImportError:
 from config import *
 from cross_platform import *
 from Message import MessageObj
+from DataMgr import InconsistentError
 import gw_message_pb2
+from db_helper import mysql
 
+# type enumaration
 MSG_SERVER = 0x0
 MSG_CLIENT = 0x1
 MSG_AUTH = 0x2
@@ -93,6 +97,17 @@ class GatewayMgr(object):
     PUSH_SERVER_SID = '00000001'
 
     def __init__(self, logger, send_queue, online_callback_func, offline_callback_func):
+        """initialize GateManager
+
+            :param logger: logger object
+            :type logger: Logger
+            :param send_queue: logger object
+            :type send_queue: gevent.queue
+            :param online_callback_func: callback to call when user is online
+            :type online_callback_func: lambda,instancemethod,function
+            :param offline_callback_func: callback to call when user is offline
+            :type offline_callback_func: lambda,instancemethod,function
+        """
         self.logger = logger
         self.online_callback = online_callback_func
         self.offline_callback = offline_callback_func
@@ -104,34 +119,51 @@ class GatewayMgr(object):
         self.greenlets = [
             gevent.spawn(self._send),
             gevent.spawn(self._recv),
-            gevent.spawn(sefl.heartbeat),
+            gevent.spawn(self._heartbeat)
         ]
         self.auth()
 
     def connect(self):
+        """establish ssl(tls) connection over TCP"""
         self._gw_fd_raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._gw_fd_raw.connect((GATEWAY_HOST, GATEWAY_PORT))
         self.gw_fd = gevent.ssl.SSLSocket(self._gw_fd_raw)
 
     def auth(self):
+        """queued the authenication packge"""
         self._queued_send('', MSG_CLIENT | MSG_AUTH, '{"token":"foo"}')
 
     def send_push(self, bundle):
+        """generate TCP package from bundle
+
+            :param bundle: original bundle
+            :type bundle: MessageObj
+        """
         if not self.gw_fd or not self._gw_fd_raw:
             self.connect()
         self._queued_send(
             bundle.user.guid,
             MSG_CLIENT | MSG_RECEIPT,
             bundle.msg.payload,
+            # str(bundle.msg.msgid),
             bundle.callback,
-            '%07d-%s' % (bundle.msg.msgid, bundle.user.guid)
+            '%07s-%s' % (bundle.msg.msgid, bundle.user.guid)
         )
-    def heartbeat(self):
-        while True:
-            gevent.sleep(HEARTBEAT_INTERV)
-            self._queued_send('', MSG_CLIENT | MSG_HEARTBEAT, '{"token":"foo"}')
 
     def _queued_send(self, rid, msgtype, body, callback = None, mid = None):
+        """generate TCP package from seperate params
+
+            :param rid: receiver's ID
+            :type rid: int
+            :param msgtype: message type
+            :type msgtype: int
+            :param body: message body
+            :type body: str
+            :param callback: callback function
+            :type callback: lambda,instancemethod,function
+            :param mid: message ID
+            :type mid: int
+        """
         mid = 'PSH' + (mid or binascii.hexlify(os.urandom(9)))
         msg = gw_message_pb2.Container()
         msg.SID = GatewayMgr.PUSH_SERVER_SID
@@ -142,16 +174,33 @@ class GatewayMgr(object):
         msg.BODY = body#'{"token":"foo"}'
 
         data = Packet.Pack(msg)
-
+        # put in send queue
         self._send_queue.put(data)
         if callback:
             self.callback_tbl[mid] = callback
 
-    #TODO reconnnect
     def _send(self):
         while True:
             b = self._send_queue.get()
-            self.gw_fd.write(b)
+            ok = False
+            for _ in range(2):
+                if not self.gw_fd or not self._gw_fd_raw:
+                    self.connect()
+                try:
+                    self.gw_fd.write(b)
+                except socket.error:
+                    try:
+                        self._gw_fd_raw.close()
+                    except:
+                        pass
+                    self._gw_fd_raw = None
+                    self.gw_fd = None
+                else:
+                    ok = True
+                if ok:
+                    break
+            if not ok:
+                self.logger.warn("failed to send packet")
 
     def _recv(self):
         buf = ''
@@ -175,22 +224,31 @@ class GatewayMgr(object):
                 self._resp_handler(msg)
             except KeyboardInterrupt:
                 break
-            
+
+    def _heartbeat(self):
+        while True:
+            gevent.sleep(HEARTBEAT_INTERV - random.random() * 3 - 3)
+            self._queued_send(
+                '0',
+                MSG_HEARTBEAT,
+                '',
+            )
+            #self.logger.debug("SENT heartbeat")
+
 
     def _resp_handler(self, msg):
-        self.logger.debug("MID=%s" % msg.MID)
+        """response handler"""
+        #self.logger.debug("MID=%s" % msg.MID)
         if msg.BODY:
             msg_body = json.loads(msg.BODY)
         else:
             msg_body = {}
-            #self.logger.debug(msg_body)
         #print(msg)
-        if msg.TYPE & MSG_CLIENT:
-            if msg_body['type'] == 'receipt':
+        if msg.TYPE & MSG_CLIENT:#client
+            if msg_body['type'] == 'receipt':#is receipt
                 mid = msg_body['mid']
-                #mid = msg.MID
                 self.logger.debug('%s confirmed %s' % (msg.SID, mid))
-                if mid in self.callback_tbl:
+                if mid in self.callback_tbl:#has registered callback
                     _func = self.callback_tbl.pop(mid)
                     try:
                         _func(MessageObj.STATUS_SUCCESS)
@@ -202,14 +260,24 @@ class GatewayMgr(object):
             else:
                 self.logger.debug('***INCOMING FROM [%s]:%s***' % (msg.SID, msg.BODY))
         else:#server
-            if msg.TYPE & MSG_EVENT:
+            if msg.TYPE & MSG_EVENT:#is user event
                 if msg_body['type'] == 'online':
                     self.logger.debug('[GM] user %s is now online' % msg.SID)
-                    self.online_callback(msg.SID)
+                    try:
+                        self.online_callback(msg.SID)
+                    except InconsistentError as ex:
+                        self.logger.warning('error during setting %s online: %s' % (msg.SID, ex))
                 elif msg_body['type'] == 'offline':
+                    #if user offline,delete the data from the msyql database
+                    self.mysql_instance = mysql()
                     self.logger.debug('[GM] user %s is now offline' % msg.SID)
-                    self.offline_callback(msg.SID)
-            else:
+                    try:
+                        print(msg.SID)
+                        self.mysql_instance.delToOnlineTable(msg.SID)
+                        self.offline_callback(msg.SID)
+                    except InconsistentError as ex:
+                        self.logger.warning('error during setting %s offline: %s' % (msg.SID, ex))
+            else:#others(take as empty message)
                 #self.logger.debug('***confirmed')
                 mid = msg.MID
                 

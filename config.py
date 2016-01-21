@@ -9,7 +9,7 @@ GATEWAY_HOST = 'messagehive.dhc.house'
 #GATEWAY_HOST = 'server01.dhc.house'
 GATEWAY_PORT = 1430
 
-MYSQL_HOST = "123.56.142.241"
+MYSQL_HOST = "127.0.0.1"
 MYSQL_PORT = 3306
 MYSQL_USER = "root"
 MYSQL_PASSWD = "gzfisme"

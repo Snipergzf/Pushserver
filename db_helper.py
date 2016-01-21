@@ -17,60 +17,74 @@ class mysql(object):
 
     """docstring for connector_MySQL"""
     login_timeout = 1800
+    def __init__(self):
+        self.conn = MySQLdb.connect("127.0.0.1", MYSQL_USER, MYSQL_PASSWD, "Register")
 
-    def get_token(self, uid):
-        retry_count = 2
-        db = MySQLdb.connect(MYSQL_HOST, MYSQL_USER, MYSQL_PASSWD, "Register")
-        for i in range(retry_count):
-            try:
-                cur = db.cursor()
-                _token = ''.join(
-                    random.sample(string.digits + string.ascii_letters, 32))
-                str_1 = "SELECT * FROM Token WHERE uid = %d " % (uid)
-                if cur.execute(str_1) == 0:
-                    str_2 = "INSERT INTO Token (uid,timeout,token) VALUES (%d, %d, \"%s\" )" % (
-                        uid,
-                        int(time.time() + login_timeout),
-                        _token
-                    )
-                    cur.execute(str_2)
-                    cur.close
-                    return True
-                else:
-                    str_2 = "UPDATE Token SET timeout = %d,token = \"%s\" WHERE uid = %d " % (
-                        int(time.time() + login_timeout), _token, uid)
-                    cur.execute(str_2)
-                    cur.close
-                    return True
-            except IntegrityError as e:
-                if e[0] == 1062:
-                    return e[1]
-                else:
-                    return False
-            except Exception, e:
-                return False
+    def delToOnlineTable(self, uid):
+        try:
+            cur = self.conn.cursor()
+            sql_str = "delete from OnlineUser where uid = \"%s\" " % (uid)
+            cur.execute(sql_str)
+            self.conn.commit()
+            cur.close()
+            self.conn.close()
+        except Exception, e:
+            print(e)
 
-    def find_uid(self, _token):
-        db = MySQLdb.connect(MYSQL_HOST, MYSQL_USER, MYSQL_PASSWD, "Register")
-        cur = db.cursor()
-        str_1 = "SELECT uid FROM Token WHERE token = \"%s\" " % (_token)
-        if cur.execute(str_1) == 0:
-            return False
-        else:
-            _uid = cur.fetchone()[0]
-            str_2 = "SELECT timeout FROM Token WHERE token = \"%s\" " % (
-                _token)
-            cur.execute(str_2)
-            _timeout = cur.fetchone()[0]
-            # print _timeout
-            # print int(time.time())
-            if ((_timeout - login_timeout) <= int(time.time())) and (int(time.time()) <= _timeout):
-                str_3 = "UPDATE Token SET timeout = %d WHERE token = \"%s\" " % (
-                    int(time.time()), _token)
-                cur.execute(str_3)
-                return _uid
-            else:
-                return False
+    # def get_token(self, uid):
+    #     retry_count = 2
+    #     db = MySQLdb.connect(MYSQL_HOST, MYSQL_USER, MYSQL_PASSWD, "Register")
+    #     for i in range(retry_count):
+    #         try:
+    #             cur = db.cursor()
+    #             _token = ''.join(
+    #                 random.sample(string.digits + string.ascii_letters, 32))
+    #             str_1 = "SELECT * FROM Token WHERE uid = %d " % (uid)
+    #             if cur.execute(str_1) == 0:
+    #                 str_2 = "INSERT INTO Token (uid,timeout,token) VALUES (%d, %d, \"%s\" )" % (
+    #                     uid,
+    #                     int(time.time() + login_timeout),
+    #                     _token
+    #                 )
+    #                 cur.execute(str_2)
+    #                 cur.close
+    #                 return True
+    #             else:
+    #                 str_2 = "UPDATE Token SET timeout = %d,token = \"%s\" WHERE uid = %d " % (
+    #                     int(time.time() + login_timeout), _token, uid)
+    #                 cur.execute(str_2)
+    #                 cur.close
+    #                 return True
+    #         except IntegrityError as e:
+    #             if e[0] == 1062:
+    #                 return e[1]
+    #             else:
+    #                 return False
+    #         except Exception, e:
+    #             return False
+
+    # def find_uid(self, _token):
+    #     db = MySQLdb.connect(MYSQL_HOST, MYSQL_USER, MYSQL_PASSWD, "Register")
+    #     cur = db.cursor()
+    #     str_1 = "SELECT uid FROM Token WHERE token = \"%s\" " % (_token)
+    #     if cur.execute(str_1) == 0:
+    #         return False
+    #     else:
+    #         _uid = cur.fetchone()[0]
+    #         str_2 = "SELECT timeout FROM Token WHERE token = \"%s\" " % (
+    #             _token)
+    #         cur.execute(str_2)
+    #         _timeout = cur.fetchone()[0]
+    #         # print _timeout
+    #         # print int(time.time())
+    #         if ((_timeout - login_timeout) <= int(time.time())) and (int(time.time()) <= _timeout):
+    #             str_3 = "UPDATE Token SET timeout = %d WHERE token = \"%s\" " % (
+    #                 int(time.time()), _token)
+    #             cur.execute(str_3)
+    #             return _uid
+    #         else:
+    #             return False
+
 
 class mongo(object):
 #     """Summary of class here.
@@ -153,27 +167,6 @@ class mongo(object):
         except:
             return False
             
-    #获取有效活动ID(返回活动截止时间大于查询时间的所有活动id，并且把过期的活动转移到cEvent_off集合中)
-    def event_get_id(self, push_time):
-        try:
-            event_id = []
-            for i in self.db.cEvent.find():
-                _len = len(i['cEvent_time'])
-                if i['cEvent_time'][_len-1]>push_time:
-                    event_id.append(i['_id'])
-                else:
-                    self.db.cEvent_off.insert(i)
-                    self.db.cEvent.remove({"_id":i['_id']})
-            return event_id
-        except:
-            return []
-
-    #获取有效活动信息，输入参数为数组，返回类型为Json对象数组
-    def event_get_single_info(self, cEvent_id):
-        return self.db.cEvent.find_one({"_id":cEvent_id},
-            {"cEvent_name":1,"cEvent_time":1,"cEvent_content":1,
-            "cEvent_theme":1,"cEvent_place":1,"cEvent_provider":1})
-            
     #获取有效活动信息，输入参数为数组，返回类型为Json对象数组
     def event_get_info(self, cEvent_id):
         content = []
@@ -205,4 +198,36 @@ class mongo(object):
         icon = self.db.cUser.find_one({"_id":cUser_id},{"cUser_icon":1})["cUser_icon"]
         self.db.cEvent.update({"_id":cEvent_id},{"$push":
             {"cEvent_comment":{"speaker_id":cUser_id,"speaker_icon":icon,"content":content}}})
+
+    #获取有效活动ID(返回活动截止时间大于查询时间的所有活动id，并且把过期的活动转移到cEvent_off集合中)
+    def event_get_id(self, push_time):
+        try:
+            event_id = []
+            event_off_id = []
+            for i in self.db.cEvent.find():
+                _len = len(i['cEvent_time'])
+                if i['cEvent_time'][_len-1]>push_time:
+                    event_id.append(i['_id'])
+                else:
+                    event_off_id.append(i['_id'])
+                    self.db.cEvent_off.insert(i)
+                    self.db.cEvent.remove({"_id":i['_id']})
+            return event_id,event_off_id
+        except:
+            return [],[]
+
+    #获取有效活动信息，输入参数为数组，返回类型为Json对象数组
+    def event_get_single_info(self, cEvent_id):
+        return self.db.cEvent.find_one({"_id":cEvent_id},
+            {"cEvent_name":1,"cEvent_time":1,"cEvent_content":1,
+            "cEvent_theme":1,"cEvent_place":1,"cEvent_provider":1,"cEvent_publish":1})
+            
+    #添加用户已经推送过的活动
+    def insert_pushed_event(self,cUser_id,cEvent_id):
+        self.db.cUser.update({"_id":cUser_id},{"$push":{"pushed_event":cEvent_id}})
+        
+
+    #获取用户已经推送过的活动
+    def get_pushed_event(self,cUser_id):
+        return self.db.cUser.find_one({"_id":cUser_id},{"pushed_event":1})
 

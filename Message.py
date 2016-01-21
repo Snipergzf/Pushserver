@@ -73,7 +73,6 @@ class BundledMessage(object):
     def get_try_count(self):
         return self.try_count
 
-
 if __name__ == '__main__':
     class d():pass
     usr = d()

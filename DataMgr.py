@@ -22,7 +22,7 @@ from gevent import Greenlet
 from gevent.lock import RLock
 from gevent.queue import Queue, Empty
 try:
-    import ujsoqn as json
+    import ujson as json
 except ImportError:
     import json
 import pickle
@@ -35,6 +35,8 @@ from db_helper import mongo
 
 from config import *
 
+class InconsistentError(Exception):
+    pass
 
 class DataMgr(Greenlet):
     pickle_names = ['_msgs', '_users', 'send_queue', 'pending_online_users']
@@ -85,13 +87,13 @@ class DataMgr(Greenlet):
 
     def msg_add(self, msg):
         """add message to msg_queue
-
             :param msg: msg to add
             :type msg: MessageObj
         """
         if not isinstance(msg, MessageObj):
             raise ValueError(" argument is not a MessageObj")
-        self._msgs[msg.msgid] = msg
+        if msg.msgid not in self._msgs:
+            self._msgs[msg.msgid] = msg
 
     def msg_get(self, msgid):
         """get message by msgid
@@ -100,7 +102,7 @@ class DataMgr(Greenlet):
             :type msgid: int
         """
         if msgid not in self._msgs:
-            raise IndexError(" msgid %d not in queue" % idx)
+            raise IndexError(" msgid %s not in queue" % idx)
         return self._msgs[msgid]
 
     def msg_del(self, msgid):
@@ -109,7 +111,10 @@ class DataMgr(Greenlet):
             :param msgid: message id
             :type msgid: int
         """
+        if msgid not in self._msgs:
+            raise IndexError(" msgid %s not in queue" % idx)
         del self._msgs[msgid]
+        # self._msgs.pop(msgid)
 
     def msg_set(self, msgid, msg):
         self._msgs[msgid] = msg
@@ -160,7 +165,7 @@ class DataMgr(Greenlet):
             :param guid: user guid
         """
         if guid not in self._users:
-            raise IndexError(" guid %d not in users list" % str(guid))
+            raise InconsistentError(" guid %s not in users list" % guid)
         return self._users[guid]
 
     def users_del(self, guid):
@@ -171,7 +176,7 @@ class DataMgr(Greenlet):
         if '-' in guid:  # convert to bytes
             guid = binascii.unhexlify(guid)
         if guid not in self._users:
-            raise IndexError(" guid %d not in users list" % str(guid))
+            raise InconsistentError(" guid %s not in users list" % guid)
         self._users_lock.acquire()
         del self._users[guid]
         self._users_lock.release()
@@ -191,6 +196,7 @@ class DataMgr(Greenlet):
             :type send_func: list
 
         """
+        self.mongo_instance = mongo()
         user_keys = user_keys or self._users.keys()
         self.logger.debug('[DM] begin mapping of %du * %dm' % (len(user_keys), self.msg_count))
         cnt = 0
@@ -198,10 +204,17 @@ class DataMgr(Greenlet):
         for k in user_keys:
             u = self._users[k]
             for _k, m in self._msgs.iteritems():
-                _ = u.gen_bundle(m)
-                if _:
-                    cnt += 1
-                    send_func(_)
+                event_dict = self.mongo_instance.get_pushed_event(u.guid)
+                try:
+                    event_list = event_dict["pushed_event"]
+                except Exception, e:
+                    event_list = []
+                if m.msgid not in event_list:
+                    _ = u.gen_bundle(m)
+                    if _:
+                        cnt += 1
+                        send_func(_)
+                        self.mongo_instance.insert_pushed_event(u.guid,m.msgid)
         if cnt:
             self.logger.debug('[DM] queued %d new bundles' % cnt)
         return cnt
@@ -212,14 +225,19 @@ class DataMgr(Greenlet):
         """
         self.mongo_instance = mongo()
         while not self._dying:
-            msgids = self.mongo_instance.event_get_id(int(time.time()))
+            # msgids,msg_off_ids = self.mongo_instance.event_get_id(int(time.time()))
+            msgids,msg_off_ids = self.mongo_instance.event_get_id(0)
+            for i in msg_off_ids:
+                x = i
+                self.msg_del(x)
             for i in msgids:
-                # generate new MessageObj instance
-                m = MessageObj(
-                    payload_callback = lambda:self.mongo_instance.event_get_single_info(i),
-                    msgid = i
-                )
-
+                #generate new MessageObj instance
+                x = i
+                if x not in self._msgs:
+                    m = MessageObj(
+                        payload_callback = lambda d = i:self.mongo_instance.event_get_single_info(d),
+                        msgid = i
+                    )
                 self.msg_add(m)
             gevent.sleep(60)
             self._save_cache()
