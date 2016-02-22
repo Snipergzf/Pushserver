@@ -99,7 +99,7 @@ def main():
         ps.demo()
         while True:
             # ready for context switching
-            gevent.sleep(0)
+            gevent.sleep(60)
     except KeyboardInterrupt:
         return
 

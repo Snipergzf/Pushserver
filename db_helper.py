@@ -220,7 +220,7 @@ class mongo(object):
     def event_get_single_info(self, cEvent_id):
         return self.db.cEvent.find_one({"_id":cEvent_id},
             {"cEvent_name":1,"cEvent_time":1,"cEvent_content":1,
-            "cEvent_theme":1,"cEvent_place":1,"cEvent_provider":1,"cEvent_publish":1})
+            "cEvent_theme":1,"cEvent_place":1,"cEvent_provider":1,"cEvent_publish":1,"share_num":1,"click_num":1,"participate":1})
             
     #添加用户已经推送过的活动
     def insert_pushed_event(self,cUser_id,cEvent_id):

@@ -44,7 +44,7 @@ class UserObj(object):
             b.try_count = _
             return b
         if msg.birth > self.heard_before and self.match_func(msg):# not sent before, and, match interest
-            print('User: not sent before, and, match interest')
+            # print('User: not sent before, and, match interest')
             b = BundledMessage(msg, self, self._send_callback)
             return b
         return None

@@ -272,7 +272,6 @@ class GatewayMgr(object):
                     self.mysql_instance = mysql()
                     self.logger.debug('[GM] user %s is now offline' % msg.SID)
                     try:
-                        print(msg.SID)
                         self.mysql_instance.delToOnlineTable(msg.SID)
                         self.offline_callback(msg.SID)
                     except InconsistentError as ex:

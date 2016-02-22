@@ -3,7 +3,7 @@
 DATA_DIR = r'/root/workspace/python/'
 DM_PKL_NAME = 'datamgr.pkl'
 # 检查新消息的间隔
-MSG_CHECK_INTERV = 10
+MSG_CHECK_INTERV = 60
 HEARTBEAT_INTERV = 25
 GATEWAY_HOST = 'messagehive.dhc.house'
 #GATEWAY_HOST = 'server01.dhc.house'

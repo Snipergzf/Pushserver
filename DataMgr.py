@@ -19,6 +19,7 @@ import os
 import os.path as opath
 import gevent
 from gevent import Greenlet
+from gevent import monkey
 from gevent.lock import RLock
 from gevent.queue import Queue, Empty
 try:
@@ -201,6 +202,7 @@ class DataMgr(Greenlet):
         self.logger.debug('[DM] begin mapping of %du * %dm' % (len(user_keys), self.msg_count))
         cnt = 0
         user_keys = sorted(user_keys, key = lambda x:self._users[x].pr, reverse = True)
+        # monkey.patch_all()
         for k in user_keys:
             u = self._users[k]
             for _k, m in self._msgs.iteritems():
@@ -225,8 +227,8 @@ class DataMgr(Greenlet):
         """
         self.mongo_instance = mongo()
         while not self._dying:
-            # msgids,msg_off_ids = self.mongo_instance.event_get_id(int(time.time()))
-            msgids,msg_off_ids = self.mongo_instance.event_get_id(0)
+            msgids,msg_off_ids = self.mongo_instance.event_get_id(int(time.time()))
+            # msgids,msg_off_ids = self.mongo_instance.event_get_id(0)
             for i in msg_off_ids:
                 x = i
                 self.msg_del(x)
